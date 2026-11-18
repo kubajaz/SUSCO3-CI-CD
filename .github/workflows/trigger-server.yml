@@ -1,0 +1,16 @@
+name: Trigger Remote Tests
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  notify-server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Remote Webhook
+        run: |
+          curl -X POST \
+            -H "X-Webhook-Token: ${{ secrets.WEBHOOK_TOKEN }}" \
+            http://YOUR_SERVER_IP:9000/hooks/trigger-tests
