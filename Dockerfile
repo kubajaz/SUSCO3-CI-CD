@@ -8,3 +8,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY matrix_benchmark.py .
 
 ENTRYPOINT ["python", "matrix_benchmark.py"]
+CMD ["--daemon"]

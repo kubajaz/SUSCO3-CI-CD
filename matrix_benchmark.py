@@ -29,6 +29,8 @@ so on) and time ``run`` yourself::
 from __future__ import annotations
 
 import argparse
+import socketserver
+import threading
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -38,6 +40,8 @@ import numpy as np
 DEFAULT_SIZE = 1536
 DEFAULT_SEED = 42
 DEFAULT_REPEATS = 10
+DEFAULT_DAEMON_HOST = "0.0.0.0"
+DEFAULT_DAEMON_PORT = 9000
 
 # Tuned at DEFAULT_SIZE on a multi-core OpenBLAS build. Smaller problems make
 # the Python and allocation overhead a larger share of the runtime.
@@ -247,7 +251,7 @@ _IMPLEMENTATIONS: dict[str, _Implementation] = {
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Time one matrix-multiplication commit mode."
+        description="Time matrix-multiplication commit modes or serve them over TCP."
     )
     parser.add_argument(
         "--mode",
@@ -273,7 +277,101 @@ def _build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_SEED,
         help=f"NumPy seed passed to np.random.seed (default: {DEFAULT_SEED})",
     )
+    parser.add_argument(
+        "--daemon",
+        action="store_true",
+        help="run as a TCP benchmark daemon instead of printing once",
+    )
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_DAEMON_HOST,
+        help=f"daemon bind address (default: {DEFAULT_DAEMON_HOST})",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_DAEMON_PORT,
+        help=f"daemon TCP port (default: {DEFAULT_DAEMON_PORT})",
+    )
     return parser
+
+
+def format_result(outcome: BenchmarkResult) -> str:
+    lines = [
+        f"mode: {outcome.mode}",
+        f"size: {outcome.size}",
+        f"seed: {outcome.seed}",
+        f"repeats: {len(outcome.durations_s)}",
+    ]
+    for index, elapsed in enumerate(outcome.durations_s, start=1):
+        lines.append(f"run {index}/{len(outcome.durations_s)}: {elapsed:.6f} s")
+    lines.append(f"average: {outcome.average_s:.6f} s")
+    lines.append(f"checksum: {outcome.checksum:.6f}")
+    return "\n".join(lines)
+
+
+SOCKET_MODES = {
+    "1": "baseline",
+    "2": "commit_reg_low",
+    "3": "commit_reg_med",
+    "4": "commit_reg_high",
+}
+
+
+class BenchmarkRequestHandler(socketserver.BaseRequestHandler):
+    def handle(self) -> None:
+        request = self.request.recv(1024)
+        command = request.decode("ascii", errors="replace").strip()
+        mode = SOCKET_MODES.get(command)
+
+        if mode is None:
+            response = "invalid command: send 1, 2, 3, or 4\n"
+        else:
+            server = self.server
+            if not isinstance(server, BenchmarkDaemon):
+                response = "daemon configuration error\n"
+            else:
+                with server.benchmark_lock:
+                    outcome = benchmark(
+                        mode=mode,
+                        repeats=server.repeats,
+                        size=server.size,
+                        seed=server.seed,
+                    )
+                response = format_result(outcome) + "\n"
+
+        self.request.sendall(response.encode("utf-8"))
+
+
+class BenchmarkDaemon(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        repeats: int,
+        size: int,
+        seed: int,
+    ) -> None:
+        super().__init__(server_address, BenchmarkRequestHandler)
+        self.repeats = repeats
+        self.size = size
+        self.seed = seed
+        self.benchmark_lock = threading.Lock()
+
+
+def run_daemon(host: str, port: int, repeats: int, size: int, seed: int) -> None:
+    if port < 1 or port > 65535:
+        raise SystemExit("port must be between 1 and 65535")
+    with BenchmarkDaemon((host, port), repeats, size, seed) as server:
+        print(f"benchmark daemon listening on {host}:{port}", flush=True)
+        print(
+            "1=baseline 2=small-regression 3=medium-regression "
+            "4=big-regression",
+            flush=True,
+        )
+        server.serve_forever()
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -283,20 +381,17 @@ def main(argv: list[str] | None = None) -> None:
     if args.size < 1:
         raise SystemExit("size must be a positive integer")
 
+    if args.daemon:
+        run_daemon(args.host, args.port, args.repeats, args.size, args.seed)
+        return
+
     outcome = benchmark(
         mode=args.mode,
         repeats=args.repeats,
         size=args.size,
         seed=args.seed,
     )
-    print(f"mode: {outcome.mode}")
-    print(f"size: {outcome.size}")
-    print(f"seed: {outcome.seed}")
-    print(f"repeats: {len(outcome.durations_s)}")
-    for index, elapsed in enumerate(outcome.durations_s, start=1):
-        print(f"run {index}/{len(outcome.durations_s)}: {elapsed:.6f} s")
-    print(f"average: {outcome.average_s:.6f} s")
-    print(f"checksum: {outcome.checksum:.6f}")
+    print(format_result(outcome))
 
 
 if __name__ == "__main__":

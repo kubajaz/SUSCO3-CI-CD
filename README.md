@@ -20,6 +20,55 @@ docker build -t matrix-benchmark .
 docker run --rm matrix-benchmark --mode commit_reg_low
 ```
 
+## TCP daemon
+
+The Docker image runs the benchmark as a daemon by default. The listener is
+bound to all pod/container interfaces on port `9000`.
+
+```bash
+docker run --rm -p 9000:9000 matrix-benchmark
+printf '1\n' | nc 127.0.0.1 9000
+```
+
+Send only one of these commands in a TCP connection:
+
+- `1`: baseline
+- `2`: small regression (`commit_reg_low`)
+- `3`: medium regression (`commit_reg_med`)
+- `4`: big regression (`commit_reg_high`)
+
+The benchmark settings can be passed to the daemon:
+
+```bash
+python3 matrix_benchmark.py --daemon --host 127.0.0.1 --port 9000 \
+  --repeats 3 --size 512
+```
+
+## Kubernetes
+
+Build and publish an image named where the cluster can pull it, update
+`spec.template.spec.containers[].image` in `k8s/deployment.yaml`, then apply:
+
+```bash
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+```
+
+The service is a `LoadBalancer`. Get its external address and send a command:
+
+```bash
+kubectl get service matrix-benchmark
+printf '1\n' | nc <EXTERNAL-IP> 9000
+```
+
+For a local cluster or to test before the external load balancer is allocated,
+use port-forwarding:
+
+```bash
+kubectl port-forward service/matrix-benchmark 9000:9000
+printf '1\n' | nc 127.0.0.1 9000
+```
+
 ## Modes
 
 The percentages are a rough size of the extra CPU time at the default matrix size. They depend on the BLAS library and the core count.
