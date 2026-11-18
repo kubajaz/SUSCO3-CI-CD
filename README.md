@@ -13,6 +13,13 @@ python3 matrix_benchmark.py --mode commit_reg_high
 
 Extra flags: `--repeats`, `--size`, `--seed`.
 
+The same flags work in Docker:
+
+```bash
+docker build -t matrix-benchmark .
+docker run --rm matrix-benchmark --mode commit_reg_low
+```
+
 ## Modes
 
 The percentages are a rough size of the extra CPU time at the default matrix size. They depend on the BLAS library and the core count.
