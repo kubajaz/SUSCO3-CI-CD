@@ -13,4 +13,4 @@ jobs:
         run: |
           curl -X POST \
             -H "X-Webhook-Token: ${{ secrets.WEBHOOK_TOKEN }}" \
-            http://YOUR_SERVER_IP:9000/hooks/trigger-tests
+            http://116.202.196.119:9000/hooks/trigger-tests
