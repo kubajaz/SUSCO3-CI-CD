@@ -2,7 +2,7 @@
 
 Four variants of the same matrix product `A @ B`. Each mode stands in for a different commit, from a clean `np.dot` to increasingly expensive code. Matrices are drawn after `np.random.seed(42)`, so the same size and seed always rebuild the same inputs.
 
-The default matrix size is 1536, the seed is 42, and the mode runs 10 times. The script prints each run's duration and the average.
+The default matrix size is 3072, the seed is 42, and the mode runs 20 times. The script prints each run's duration and the average.
 
 ```bash
 python3 matrix_benchmark.py --mode baseline

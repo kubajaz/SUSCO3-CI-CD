@@ -22,7 +22,7 @@ so on) and time ``run`` yourself::
 
     from matrix_benchmark import MatrixBenchmark
 
-    bench = MatrixBenchmark(size=1536, seed=42)
+    bench = MatrixBenchmark(size=3072, seed=42)
     product = bench.run("commit_reg_low")
 """
 
@@ -37,7 +37,7 @@ from typing import Callable
 
 import numpy as np
 
-DEFAULT_SIZE = 1536
+DEFAULT_SIZE = 3072
 DEFAULT_SEED = 42
 DEFAULT_REPEATS = 1
 DEFAULT_DAEMON_HOST = "0.0.0.0"
