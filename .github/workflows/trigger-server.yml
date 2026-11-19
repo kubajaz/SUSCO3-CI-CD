@@ -4,13 +4,67 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Benchmark mode (1=baseline, 2=small, 3=medium, 4=large, all=interleaved 1-4)"
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "2"
+          - "3"
+          - "4"
+          - "all"
+      repetitions:
+        description: "Number of repetitions (or full 1-4 cycles if mode=all)"
+        required: true
+        default: "1"
+        type: string
+
+concurrency:
+  group: energy-benchmark-pod
+  cancel-in-progress: false
 
 jobs:
   notify-server:
     runs-on: ubuntu-latest
     steps:
-      - name: Call Remote Webhook
+      - name: Run Remote Energy Benchmark
+        env:
+          WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}
+          MODE: ${{ inputs.mode || '1' }}
+          REPS: ${{ inputs.repetitions || '1' }}
         run: |
-          curl -X POST \
-            -H "X-Webhook-Token: ${{ secrets.WEBHOOK_TOKEN }}" \
-            http://116.202.196.119:9000/hooks/trigger-tests
+          set -euo pipefail
+
+          if [ "$MODE" = "all" ]; then
+            MODES=(1 2 3 4)
+          else
+            MODES=("$MODE")
+          fi
+
+          # Warm-up run (unmeasured)
+          echo "=== Warm-up (mode 1) ==="
+          curl -fsS --max-time 120 -X POST \
+            -H "X-Webhook-Token: ${WEBHOOK_TOKEN}" \
+            "http://116.202.196.119:9000/hooks/trigger-tests?mode=1" > /dev/null
+          sleep 10
+
+          for rep in $(seq 1 "$REPS"); do
+            for m in "${MODES[@]}"; do
+              t_start=$(date +%s)
+              echo "=== Rep ${rep}/${REPS} | Mode ${m} | t_start=${t_start} ==="
+
+              curl -fsS --max-time 120 -X POST \
+                -H "X-Webhook-Token: ${WEBHOOK_TOKEN}" \
+                "http://116.202.196.119:9000/hooks/trigger-tests?mode=${m}"
+
+              t_end=$(date +%s)
+              echo "=== Rep ${rep}/${REPS} | Mode ${m} | t_end=${t_end} | duration=$((t_end - t_start))s ==="
+
+              # Cooldown + Kepler 5s scrape buffer
+              sleep 10
+            done
+          done
